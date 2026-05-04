@@ -81,9 +81,14 @@ int main() {
           if (currentMode == 0) window.close();
           else currentMode = 0;
         } else if (keyPressed->code == sf::Keyboard::Key::Num1) {
-          currentMode = 1;
+          if (currentMode == 2 && !heap.isTypeSelected()) heap.selectType(false); // Max Heap
+          else currentMode = 1;
         } else if (keyPressed->code == sf::Keyboard::Key::Num2) {
-          currentMode = 2;
+          if (currentMode == 2 && !heap.isTypeSelected()) heap.selectType(true); // Min Heap
+          else {
+              currentMode = 2;
+              heap.toggleType();
+          }
         } else if (keyPressed->code == sf::Keyboard::Key::Num3) {
           currentMode = 3;
         } else if (keyPressed->code == sf::Keyboard::Key::Num4) {
@@ -135,6 +140,7 @@ int main() {
             for(size_t i=0; i<btnRects.size(); ++i) {
                 if (btnRects[i].getGlobalBounds().contains(pos)) {
                     currentMode = i + 1;
+                    if (currentMode == 2) heap.toggleType();
                 }
             }
           } else if (currentMode == 3)

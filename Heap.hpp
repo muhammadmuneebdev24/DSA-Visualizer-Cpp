@@ -9,6 +9,7 @@ private:
     std::vector<int> data;
     sf::Font* font;
     std::string statusMsg = "Press 'I' to add node, 'H' to Heapify-Up, 'D' to Delete/Heapify-Down";
+    bool typeSelected = false;
     bool isMinHeap = true;
     
     // Step-by-step animation state
@@ -25,10 +26,14 @@ private:
     };
     std::vector<NodeAnim> animations;
 
+    enum class Task { NONE, UP, DOWN };
+    Task pendingTask = Task::NONE;
+
     void processHeapifyUp() {
         if (currentIdx <= 0) {
             state = State::IDLE;
-            statusMsg = "Insertion complete.";
+            pendingTask = Task::NONE;
+            statusMsg = "Insertion complete. Press 'I' to add node or 'D' to delete.";
             return;
         }
 
@@ -36,13 +41,13 @@ private:
         bool shouldSwap = isMinHeap ? (data[currentIdx] < data[parent]) : (data[currentIdx] > data[parent]);
 
         if (shouldSwap) {
-            statusMsg = "Swapping " + std::to_string(data[currentIdx]) + " and " + std::to_string(data[parent]) + 
-                        (isMinHeap ? " because child is smaller than parent." : " because child is larger than parent.");
+            statusMsg = "Swapping " + std::to_string(data[currentIdx]) + " and " + std::to_string(data[parent]) + ".";
             std::swap(data[currentIdx], data[parent]);
             currentIdx = parent;
         } else {
             state = State::IDLE;
-            statusMsg = "Heap property satisfied. No more changes needed.";
+            pendingTask = Task::NONE;
+            statusMsg = "Heap property satisfied. Press 'I' to add node.";
         }
     }
 
@@ -61,65 +66,73 @@ private:
         }
 
         if (target != currentIdx) {
-            statusMsg = "Swapping " + std::to_string(data[currentIdx]) + " with " + std::to_string(data[target]) + 
-                        " to move the " + (isMinHeap ? "smaller" : "larger") + " value up.";
+            statusMsg = "Swapping " + std::to_string(data[currentIdx]) + " with " + std::to_string(data[target]) + ".";
             std::swap(data[currentIdx], data[target]);
             currentIdx = target;
         } else {
             state = State::IDLE;
-            statusMsg = "Heapify-down complete. Root is now the " + std::string(isMinHeap ? "minimum" : "maximum") + ".";
+            pendingTask = Task::NONE;
+            statusMsg = "Deletion/Heapify-down complete. Press 'I' to add node.";
         }
     }
 
 public:
-    Heap(sf::Font* f) : font(f) {}
+    Heap(sf::Font* f) : font(f) {
+        statusMsg = "Choose Type: Press '1' for Max Heap, '2' for Min Heap";
+    }
+
+    void selectType(bool minHeap) {
+        isMinHeap = minHeap;
+        typeSelected = true;
+        statusMsg = (isMinHeap ? "Min Heap Selected. Press 'I' to add node." : "Max Heap Selected. Press 'I' to add node.");
+        data.clear();
+        animations.clear();
+        pendingTask = Task::NONE;
+    }
+
+    bool isTypeSelected() const { return typeSelected; }
 
     void insert(int key) {
+        if (!typeSelected) return;
         data.push_back(key);
         NodeAnim anim;
         anim.currentPos = sf::Vector2f(600, 700);
         animations.push_back(anim);
-        statusMsg = "Added " + std::to_string(key) + " at end. Press 'H' to Heapify.";
-    }
-
-    void startHeapifyUp() {
-        if (data.empty() || state != State::IDLE) return;
         currentIdx = data.size() - 1;
-        state = State::HEAPIFY_UP;
-        stepClock.restart();
+        pendingTask = Task::UP;
+        statusMsg = "Added " + std::to_string(key) + ". Heapify is required! Press 'H' to do it.";
     }
 
     void deleteRoot() {
-        if (data.empty() || state != State::IDLE) return;
-        statusMsg = "Moved last to root. Press 'H' to Heapify-Down.";
+        if (data.empty() || state != State::IDLE || !typeSelected) return;
+        if (data.size() == 1) {
+            data.pop_back();
+            animations.pop_back();
+            statusMsg = "Heap is now empty.";
+            return;
+        }
+        statusMsg = "Root removed. Heapify is required! Press 'H' to do it.";
         data[0] = data.back();
         data.pop_back();
         animations.pop_back();
         currentIdx = 0;
-    }
-    
-    void startHeapifyDown() {
-        if (data.empty() || state != State::IDLE) return;
-        state = State::HEAPIFY_DOWN;
-        stepClock.restart();
+        pendingTask = Task::DOWN;
     }
 
     void toggleType() {
-        isMinHeap = !isMinHeap;
-        statusMsg = (isMinHeap ? "Switched to Min-Heap" : "Switched to Max-Heap");
+        typeSelected = false;
+        statusMsg = "Choose Type: Press '1' for Max Heap, '2' for Min Heap";
         data.clear();
         animations.clear();
         state = State::IDLE;
+        pendingTask = Task::NONE;
     }
 
     void triggerHeapify() {
-        if (state != State::IDLE || data.empty()) return;
-        // Simple logic: if currentIdx was set to 0 by deleteRoot, heapify down.
-        // Otherwise, heapify up from the last element.
-        if (currentIdx == 0 && data.size() > 1) {
+        if (!typeSelected || state != State::IDLE || data.empty() || pendingTask == Task::NONE) return;
+        if (pendingTask == Task::DOWN) {
             state = State::HEAPIFY_DOWN;
-        } else {
-            currentIdx = data.size() - 1;
+        } else if (pendingTask == Task::UP) {
             state = State::HEAPIFY_UP;
         }
         stepClock.restart();
@@ -136,6 +149,7 @@ public:
     }
 
     void update() {
+        if (!typeSelected) return;
         if (state != State::IDLE && stepClock.getElapsedTime().asSeconds() > stepInterval) {
             if (state == State::HEAPIFY_UP) processHeapifyUp();
             else if (state == State::HEAPIFY_DOWN) processHeapifyDown();
@@ -149,42 +163,41 @@ public:
 
     void draw(sf::RenderWindow& window) {
         if (font) {
-            sf::Text text(*font, statusMsg, 20);
-            text.setFillColor(sf::Color(241, 196, 15));
-            text.setPosition({10, 50});
+            sf::Text text(*font, statusMsg, 24);
+            text.setFillColor(sf::Color::White);
+            text.setPosition({10, 80});
             window.draw(text);
         }
+
+        if (!typeSelected) return;
 
         // Draw edges
         for (int i = 0; i < data.size(); ++i) {
             int left = 2 * i + 1;
             int right = 2 * i + 2;
             if (left < data.size()) {
-                sf::Vertex line[] = { sf::Vertex{animations[i].currentPos, sf::Color(189, 195, 199)}, sf::Vertex{animations[left].currentPos, sf::Color(189, 195, 199)} };
+                sf::Vertex line[] = { sf::Vertex{animations[i].currentPos, sf::Color::White}, sf::Vertex{animations[left].currentPos, sf::Color::White} };
                 window.draw(line, 2, sf::PrimitiveType::Lines);
             }
             if (right < data.size()) {
-                sf::Vertex line[] = { sf::Vertex{animations[i].currentPos, sf::Color(189, 195, 199)}, sf::Vertex{animations[right].currentPos, sf::Color(189, 195, 199)} };
+                sf::Vertex line[] = { sf::Vertex{animations[i].currentPos, sf::Color::White}, sf::Vertex{animations[right].currentPos, sf::Color::White} };
                 window.draw(line, 2, sf::PrimitiveType::Lines);
             }
         }
 
         // Draw nodes
         for (int i = 0; i < data.size(); ++i) {
-            sf::CircleShape circle(22);
-            circle.setOrigin({22, 22});
+            sf::CircleShape circle(25);
+            circle.setOrigin({25, 25});
             circle.setPosition(animations[i].currentPos);
             
-            sf::Color fillCol = sf::Color(52, 152, 219); // Standard Blue
-            if (i == currentIdx && state != State::IDLE) fillCol = sf::Color(231, 76, 60); // Highlight Red
-            
-            circle.setFillColor(fillCol);
+            circle.setFillColor(sf::Color::Transparent);
             circle.setOutlineThickness(2.f);
             circle.setOutlineColor(sf::Color::White);
             window.draw(circle);
 
             if (font) {
-                sf::Text text(*font, std::to_string(data[i]), 18);
+                sf::Text text(*font, std::to_string(data[i]), 20);
                 text.setFillColor(sf::Color::White);
                 sf::FloatRect bounds = text.getLocalBounds();
                 text.setOrigin({bounds.size.x / 2.0f + bounds.position.x, bounds.size.y / 2.0f + bounds.position.y});
